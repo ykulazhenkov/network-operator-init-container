@@ -22,3 +22,14 @@ tasks:
           GO_REPO_PATH: github.com/golangci/golangci-lint/cmd/golangci-lint
           VER: v1.53.3
           BIN_DIR: "{{.BIN_DIR}}"
+
+  setup-envtest:
+    desc: install setup-envtest
+    cmds:
+      - task: go-install
+        vars:
+          BIN_NAME: setup-envtest
+          GO_REPO_PATH: sigs.k8s.io/controller-runtime/tools/setup-envtest
+          VER: latest
+          BIN_DIR: "{{.BIN_DIR}}"
+

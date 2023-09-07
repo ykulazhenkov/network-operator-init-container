@@ -11,25 +11,16 @@
  limitations under the License.
 */
 
-package signals
+package config_test
 
 import (
-	"context"
-	"os"
-	"os/signal"
-	"syscall"
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// SetupShutdownSignals registers for SIGTERM and SIGINT.
-// will cancel the context if signal received
-func SetupShutdownSignals() context.Context {
-	ctx, cFunc := context.WithCancel(context.Background())
-	c := make(chan os.Signal, 2)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		cFunc()
-	}()
-
-	return ctx
+func TestConfig(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Config Suite")
 }
