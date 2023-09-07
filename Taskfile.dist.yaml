@@ -21,6 +21,8 @@ vars:
   IMAGE_NAME_FULL: "{{.IMAGE_REGISTRY}}/{{.IMAGE_REPOSITORY}}:{{.IMAGE_TAG}}"
   # Coverage related vars
   COVER_PROFILE: "{{.PROJECT_DIR}}/network-operator-init-container.cover"
+  # Test related vars
+  ENVTEST_K8S_VERSION: 1.27.1
 
 includes:
   version: ./taskfiles/Version.yaml
@@ -65,11 +67,14 @@ tasks:
 
   test:
     desc: run unit tests
+    deps:
+      - install:setup-envtest
     vars:
       COVER_MODE: atomic
       GO_PKGS:
         sh: go list ./... | grep -v ".*/mocks"
     cmd: |
+      export KUBEBUILDER_ASSETS=$({{.LOCAL_BIN}}/setup-envtest use {{.ENVTEST_K8S_VERSION}} -p path);
       go test -covermode={{.COVER_MODE}} -coverprofile={{.COVER_PROFILE}} {{.GO_PKGS | catLines}}
 
   lint:
