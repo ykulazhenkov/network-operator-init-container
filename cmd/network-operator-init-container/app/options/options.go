@@ -14,11 +14,13 @@
 package options
 
 import (
+	goflag "flag"
 	"fmt"
 
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	logsapi "k8s.io/component-base/logs/api/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // New creates new Options
@@ -30,11 +32,19 @@ func New() *Options {
 
 // Options contains application options
 type Options struct {
-	LogConfig *logsapi.LoggingConfiguration
+	NodeName   string
+	ConfigPath string
+	LogConfig  *logsapi.LoggingConfiguration
 }
 
 // AddNamedFlagSets returns FlagSet for Options
 func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
+	configFS := sharedFS.FlagSet("Config")
+	configFS.StringVar(&o.NodeName, "node-name", "",
+		"name of the k8s node on which this app runs")
+	configFS.StringVar(&o.ConfigPath, "config", "",
+		"path to the configuration file")
+
 	logFS := sharedFS.FlagSet("Logging")
 	logsapi.AddFlags(o.LogConfig, logFS)
 	logs.AddFlags(logFS, logs.SkipLoggingConfigurationFlags())
@@ -42,11 +52,25 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 	generalFS := sharedFS.FlagSet("General")
 	_ = generalFS.Bool("version", false, "print version and exit")
 	_ = generalFS.BoolP("help", "h", false, "print help and exit")
+
+	kubernetesFS := sharedFS.FlagSet("Kubernetes")
+
+	goFS := goflag.NewFlagSet("tmp", goflag.ContinueOnError)
+	ctrl.RegisterFlags(goFS)
+	kubernetesFS.AddGoFlagSet(goFS)
 }
 
 // Validate registered options
 func (o *Options) Validate() error {
 	var err error
+
+	if o.NodeName == "" {
+		return fmt.Errorf("node-name is required parameter")
+	}
+
+	if o.ConfigPath == "" {
+		return fmt.Errorf("config is required parameter")
+	}
 
 	if err = logsapi.ValidateAndApply(o.LogConfig, nil); err != nil {
 		return fmt.Errorf("failed to validate logging flags. %w", err)
