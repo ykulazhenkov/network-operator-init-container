@@ -15,8 +15,6 @@ package config_test
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -24,51 +22,37 @@ import (
 	configPgk "github.com/Mellanox/network-operator-init-container/pkg/config"
 )
 
-func createConfig(path string, cfg configPgk.Config) {
+func createConfig(cfg configPgk.Config) string {
 	data, err := json.Marshal(cfg)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	ExpectWithOffset(1, os.WriteFile(path, data, 0x744))
+	return string(data)
 }
 
 var _ = Describe("Config test", func() {
-	var (
-		configPath string
-	)
-	BeforeEach(func() {
-		configPath = filepath.Join(GinkgoT().TempDir(), "config")
-	})
 	It("Valid - safeDriverLoad disabled", func() {
-		createConfig(configPath, configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+		cfg, err := configPgk.Load(createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 			Enable: false,
-		}})
-		cfg, err := configPgk.FromFile(configPath)
+		}}))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.SafeDriverLoad.Enable).To(BeFalse())
 	})
 	It("Valid - safeDriverLoad enabled", func() {
-		createConfig(configPath, configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+		cfg, err := configPgk.Load(createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 			Enable:     true,
 			Annotation: "something",
-		}})
-		cfg, err := configPgk.FromFile(configPath)
+		}}))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.SafeDriverLoad.Enable).To(BeTrue())
 		Expect(cfg.SafeDriverLoad.Annotation).To(Equal("something"))
 	})
-	It("Failed to read config", func() {
-		_, err := configPgk.FromFile(configPath)
-		Expect(err).To(HaveOccurred())
-	})
 	It("Failed to unmarshal config", func() {
-		Expect(os.WriteFile(configPath, []byte("invalid\""), 0x744)).NotTo(HaveOccurred())
-		_, err := configPgk.FromFile(configPath)
+		_, err := configPgk.Load("invalid\"")
 		Expect(err).To(HaveOccurred())
 	})
-	It("Logical validation failed", func() {
-		createConfig(configPath, configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+	It("Logical validation failed - no annotation", func() {
+		_, err := configPgk.Load(createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 			Enable: true,
-		}})
-		_, err := configPgk.FromFile(configPath)
+		}}))
 		Expect(err).To(HaveOccurred())
 	})
 })

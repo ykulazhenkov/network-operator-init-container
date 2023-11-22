@@ -1,20 +1,29 @@
 # network-operator-init-container
 Init container for NVIDIA Network Operator
 
-The network-operator-init-container container has two required command line arguments:
+## Configuration
+The network-operator-init-container container has following required command line arguments:
 
- - `--config` path to the configuration file
+ - `--configmap-name` name of the configmap with configuration for the app
+ - `--configmap-namespace` namespace of the configmap with configuration for the app
  - `--node-name` name of the k8s node on which this app runs
 
-The configuration file should be in JSON format:
+The ConfigMap should include configuration in JSON format:
 
 ```
-{
-  "safeDriverLoad": {
-    "enable": true,
-    "annotation": "some-annotation"
-  }
-}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ofed-init-container-config
+  namespace: default
+data:
+  config.json: |-
+    {
+      "safeDriverLoad": {
+        "enable": true,
+        "annotation": "some-annotation"
+      }
+    }
 ```
 
 - `safeDriverLoad` - contains settings related to safeDriverLoad feature
@@ -28,6 +37,25 @@ The container exits with code 0 when the annotation is removed from the Node obj
 
 If `safeDriverLoad` feature is disabled then the container will immediately exit with code 0.
 
+### Required permissions
+
+```
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: network-operator-init-container
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch", "watch", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+
+```
+
+## Command line arguments
+
 ```
 NVIDIA Network Operator init container
 
@@ -36,8 +64,12 @@ Usage:
 
 Config flags:
 
-      --config string                                                                                                                                                                                 
-                path to the configuration file
+      --configmap-key string                                                                                                                                                                          
+                key inside the configmap with configuration for the app (default "config.json")
+      --configmap-name string                                                                                                                                                                         
+                name of the configmap with configuration for the app
+      --configmap-namespace string                                                                                                                                                                    
+                namespace of the configmap with configuration for the app
       --node-name string                                                                                                                                                                              
                 name of the k8s node on which this app runs
 

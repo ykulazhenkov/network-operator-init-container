@@ -14,13 +14,13 @@
 package app_test
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,8 +34,11 @@ import (
 )
 
 const (
-	testNodeName   = "node1"
-	testAnnotation = "foo.bar/spam"
+	testConfigMapName      = "test"
+	testConfigMapNamespace = "default"
+	testConfigMapKey       = "conf"
+	testNodeName           = "node1"
+	testAnnotation         = "foo.bar/spam"
 )
 
 func createNode(name string) *corev1.Node {
@@ -44,44 +47,67 @@ func createNode(name string) *corev1.Node {
 	return node
 }
 
-func createConfig(path string, cfg configPgk.Config) {
+func createConfig(cfg configPgk.Config) {
 	data, err := json.Marshal(cfg)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	ExpectWithOffset(1, os.WriteFile(path, data, 0x744))
+	err = k8sClient.Create(ctx, &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: testConfigMapName, Namespace: testConfigMapNamespace},
+		Data:       map[string]string{testConfigMapKey: string(data)},
+	})
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+}
+
+func newOpts() *options.Options {
+	return &options.Options{
+		ConfigMapName:      testConfigMapName,
+		ConfigMapNamespace: testConfigMapNamespace,
+		ConfigMapKey:       testConfigMapKey,
+	}
 }
 
 var _ = Describe("Init container", func() {
 	var (
-		configPath string
+		testCtx   context.Context
+		testCFunc context.CancelFunc
 	)
+
 	BeforeEach(func() {
-		configPath = filepath.Join(GinkgoT().TempDir(), "config")
+		testCtx, testCFunc = context.WithCancel(ctx)
+	})
+
+	AfterEach(func() {
+		err := k8sClient.Delete(ctx, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: testConfigMapName, Namespace: testConfigMapNamespace},
+		})
+		if !apiErrors.IsNotFound(err) {
+			Expect(err).NotTo(HaveOccurred())
+		}
+		testCFunc()
 	})
 	It("Succeed", func() {
 		testDone := make(chan interface{})
 		go func() {
 			defer close(testDone)
 			defer GinkgoRecover()
-			opts := options.New()
+			opts := newOpts()
 			opts.NodeName = testNodeName
-			opts.ConfigPath = configPath
-			createConfig(configPath, configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+			createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 				Enable:     true,
 				Annotation: testAnnotation,
 			}})
 			var err error
 			appExit := make(chan interface{})
 			go func() {
-				err = app.RunNetworkOperatorInitContainer(ctx, cfg, opts)
+				err = app.RunNetworkOperatorInitContainer(testCtx, cfg, opts)
 				close(appExit)
 			}()
 			node := &corev1.Node{}
 			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: testNodeName}, node)).NotTo(HaveOccurred())
+				g.Expect(k8sClient.Get(testCtx, types.NamespacedName{Name: testNodeName}, node)).NotTo(HaveOccurred())
 				g.Expect(node.GetAnnotations()[testAnnotation]).NotTo(BeEmpty())
 			}, 30, 1).Should(Succeed())
 			// remove annotation
-			Expect(k8sClient.Patch(ctx, node, client.RawPatch(
+			Expect(k8sClient.Patch(testCtx, node, client.RawPatch(
 				types.MergePatchType, []byte(
 					fmt.Sprintf(`{"metadata":{"annotations":{%q: null}}}`,
 						testAnnotation))))).NotTo(HaveOccurred())
@@ -95,17 +121,16 @@ var _ = Describe("Init container", func() {
 		go func() {
 			defer close(testDone)
 			defer GinkgoRecover()
-			opts := options.New()
+			opts := newOpts()
 			opts.NodeName = "unknown-node"
-			opts.ConfigPath = configPath
-			createConfig(configPath, configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+			createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 				Enable:     true,
 				Annotation: testAnnotation,
 			}})
 			var err error
 			appExit := make(chan interface{})
 			go func() {
-				err = app.RunNetworkOperatorInitContainer(ctx, cfg, opts)
+				err = app.RunNetworkOperatorInitContainer(testCtx, cfg, opts)
 				close(appExit)
 			}()
 			Eventually(appExit, 30, 1).Should(BeClosed())
@@ -118,20 +143,19 @@ var _ = Describe("Init container", func() {
 		go func() {
 			defer close(testDone)
 			defer GinkgoRecover()
-			opts := options.New()
+			opts := newOpts()
 			opts.NodeName = testNodeName
-			opts.ConfigPath = configPath
-			createConfig(configPath, configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+			createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 				Enable:     true,
 				Annotation: testAnnotation,
 			}})
 			var err error
 			appExit := make(chan interface{})
 			go func() {
-				err = app.RunNetworkOperatorInitContainer(ctx, cfg, opts)
+				err = app.RunNetworkOperatorInitContainer(testCtx, cfg, opts)
 				close(appExit)
 			}()
-			cFunc()
+			testCFunc()
 			Eventually(appExit, 30, 1).Should(BeClosed())
 			Expect(err).To(HaveOccurred())
 		}()
@@ -142,13 +166,12 @@ var _ = Describe("Init container", func() {
 		go func() {
 			defer close(testDone)
 			defer GinkgoRecover()
-			opts := options.New()
+			opts := newOpts()
 			opts.NodeName = "unknown-node"
-			opts.ConfigPath = configPath
 			var err error
 			appExit := make(chan interface{})
 			go func() {
-				err = app.RunNetworkOperatorInitContainer(ctx, cfg, opts)
+				err = app.RunNetworkOperatorInitContainer(testCtx, cfg, opts)
 				close(appExit)
 			}()
 			Eventually(appExit, 30, 1).Should(BeClosed())
@@ -161,16 +184,15 @@ var _ = Describe("Init container", func() {
 		go func() {
 			defer close(testDone)
 			defer GinkgoRecover()
-			opts := options.New()
+			opts := newOpts()
 			opts.NodeName = testNodeName
-			opts.ConfigPath = configPath
-			createConfig(configPath, configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
+			createConfig(configPgk.Config{SafeDriverLoad: configPgk.SafeDriverLoadConfig{
 				Enable: false,
 			}})
 			var err error
 			appExit := make(chan interface{})
 			go func() {
-				err = app.RunNetworkOperatorInitContainer(ctx, cfg, opts)
+				err = app.RunNetworkOperatorInitContainer(testCtx, cfg, opts)
 				close(appExit)
 			}()
 			Eventually(appExit, 30, 1).Should(BeClosed())
