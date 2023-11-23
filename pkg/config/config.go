@@ -15,19 +15,14 @@ package config
 
 import (
 	"fmt"
-	"os"
 
 	"k8s.io/apimachinery/pkg/util/json"
 )
 
-// FromFile reads configuration from the file
-func FromFile(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read data from the provided file: %v", err)
-	}
+// Load parse configuration from the provided string
+func Load(config string) (*Config, error) {
 	cfg := &Config{}
-	if err := json.Unmarshal(data, cfg); err != nil {
+	if err := json.Unmarshal([]byte(config), cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal configuration: %v", err)
 	}
 	if err := cfg.Validate(); err != nil {

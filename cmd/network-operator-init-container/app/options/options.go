@@ -32,9 +32,11 @@ func New() *Options {
 
 // Options contains application options
 type Options struct {
-	NodeName   string
-	ConfigPath string
-	LogConfig  *logsapi.LoggingConfiguration
+	NodeName           string
+	ConfigMapName      string
+	ConfigMapNamespace string
+	ConfigMapKey       string
+	LogConfig          *logsapi.LoggingConfiguration
 }
 
 // AddNamedFlagSets returns FlagSet for Options
@@ -42,8 +44,12 @@ func (o *Options) AddNamedFlagSets(sharedFS *cliflag.NamedFlagSets) {
 	configFS := sharedFS.FlagSet("Config")
 	configFS.StringVar(&o.NodeName, "node-name", "",
 		"name of the k8s node on which this app runs")
-	configFS.StringVar(&o.ConfigPath, "config", "",
-		"path to the configuration file")
+	configFS.StringVar(&o.ConfigMapName, "configmap-name", "",
+		"name of the configmap with configuration for the app")
+	configFS.StringVar(&o.ConfigMapNamespace, "configmap-namespace", "",
+		"namespace of the configmap with configuration for the app")
+	configFS.StringVar(&o.ConfigMapKey, "configmap-key", "config.json",
+		"key inside the configmap with configuration for the app")
 
 	logFS := sharedFS.FlagSet("Logging")
 	logsapi.AddFlags(o.LogConfig, logFS)
@@ -68,8 +74,16 @@ func (o *Options) Validate() error {
 		return fmt.Errorf("node-name is required parameter")
 	}
 
-	if o.ConfigPath == "" {
-		return fmt.Errorf("config is required parameter")
+	if o.ConfigMapName == "" {
+		return fmt.Errorf("configmap-name is required parameter")
+	}
+
+	if o.ConfigMapNamespace == "" {
+		return fmt.Errorf("configmap-namespace is required parameter")
+	}
+
+	if o.ConfigMapKey == "" {
+		return fmt.Errorf("configmap-key is required parameter")
 	}
 
 	if err = logsapi.ValidateAndApply(o.LogConfig, nil); err != nil {

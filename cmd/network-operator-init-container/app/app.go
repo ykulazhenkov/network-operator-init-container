@@ -97,7 +97,38 @@ func RunNetworkOperatorInitContainer(ctx context.Context, config *rest.Config, o
 		"Options", opts, "Version", version.GetVersionString())
 	ctrl.SetLogger(logger)
 
-	initContCfg, err := configPgk.FromFile(opts.ConfigPath)
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
+		Metrics: metricsserver.Options{BindAddress: "0"},
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Node{}: {Field: fields.ParseSelectorOrDie(
+					fmt.Sprintf("metadata.name=%s", opts.NodeName))}}},
+	})
+	if err != nil {
+		logger.Error(err, "unable to create manager")
+		return err
+	}
+
+	k8sClient, err := client.New(config,
+		client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
+	if err != nil {
+		logger.Error(err, "failed to create k8sClient client")
+		return err
+	}
+
+	confConfigMap := &corev1.ConfigMap{}
+
+	err = k8sClient.Get(ctx, client.ObjectKey{
+		Name:      opts.ConfigMapName,
+		Namespace: opts.ConfigMapNamespace,
+	}, confConfigMap)
+
+	if err != nil {
+		logger.Error(err, "failed to read config map with configuration")
+		return err
+	}
+
+	initContCfg, err := configPgk.Load(confConfigMap.Data[opts.ConfigMapKey])
 	if err != nil {
 		logger.Error(err, "failed to read configuration")
 		return err
@@ -107,25 +138,6 @@ func RunNetworkOperatorInitContainer(ctx context.Context, config *rest.Config, o
 	if !initContCfg.SafeDriverLoad.Enable {
 		logger.Info("safe driver loading is disabled, exit")
 		return nil
-	}
-
-	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Metrics: metricsserver.Options{BindAddress: "0"},
-		Cache: cache.Options{
-			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Node{}: {Field: fields.ParseSelectorOrDie(
-					fmt.Sprintf("metadata.name=%s", opts.NodeName))}}},
-	})
-	if err != nil {
-		logger.Error(err, "unable to start manager")
-		return err
-	}
-
-	k8sClient, err := client.New(config,
-		client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
-	if err != nil {
-		logger.Error(err, "failed to create k8sClient client")
-		return err
 	}
 
 	errCh := make(chan error, 1)
